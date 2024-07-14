@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics.Contracts;
 
 namespace Soenneker.Extensions.String.Html;
@@ -19,7 +20,8 @@ public static class HtmlStringExtension
     /// This method uses the ReverseMarkdown library to perform the conversion. The converter instance is lazily initialized and cached for reuse.
     /// </remarks>
     [Pure]
-    public static string ToMarkdown(this string html)
+    [return: NotNullIfNotNull(nameof(html))]
+    public static string? ToMarkdown(this string? html)
     {
         if (html.IsNullOrWhiteSpace())
             return html;
