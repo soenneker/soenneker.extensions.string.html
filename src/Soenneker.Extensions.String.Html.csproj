@@ -43,6 +43,6 @@
 
     <ItemGroup>
       <PackageReference Include="ReverseMarkdown" Version="4.6.0" />
-      <PackageReference Include="Soenneker.Extensions.String" Version="2.1.213" />
+      <PackageReference Include="Soenneker.Extensions.String" Version="2.1.216" />
     </ItemGroup>
 </Project>
