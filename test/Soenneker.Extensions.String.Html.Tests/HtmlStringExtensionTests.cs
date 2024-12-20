@@ -1,13 +1,13 @@
-using Soenneker.Tests.FixturedUnit;
+using Soenneker.Tests.Unit;
 using Xunit;
-
 
 namespace Soenneker.Extensions.String.Html.Tests;
 
-[Collection("Collection")]
-public class HtmlStringExtensionTests : FixturedUnitTest
+public class HtmlStringExtensionTests : UnitTest
 {
-    public HtmlStringExtensionTests(Fixture fixture, ITestOutputHelper output) : base(fixture, output)
+    [Fact]
+    public void Default()
     {
+
     }
 }
