@@ -1,4 +1,4 @@
-# Contributing to Soenneker.Extensions.String.Html
+﻿# Contributing to Soenneker.Extensions.String.Html
 
 We're excited that you're interested in contributing!
 
