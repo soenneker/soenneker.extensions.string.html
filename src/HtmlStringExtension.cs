@@ -29,7 +29,7 @@ public static class HtmlStringExtension
     /// <returns>The Markdown representation of the HTML string. If the input is null or whitespace, the original input is returned.</returns>
     [Pure]
     [return: NotNullIfNotNull(nameof(html))]
-    public static string? ToMarkdown(this string? html)
+    public static string? ToMarkdownFromHtml(this string? html)
     {
         if (html.IsNullOrWhiteSpace())
             return html;
@@ -45,7 +45,7 @@ public static class HtmlStringExtension
     /// A <see cref="string"/> containing the formatted HTML, or <c>null</c> if <paramref name="html"/> is <c>null</c>.
     /// </returns>
     [Pure]
-    public static async ValueTask<string?> Format(this string? html)
+    public static async ValueTask<string?> FormatAsHtml(this string? html)
     {
         if (html.IsNullOrWhiteSpace())
             return html;
@@ -66,7 +66,7 @@ public static class HtmlStringExtension
     /// <returns>The plain text content, or <c>null</c> if <paramref name="html"/> is <c>null</c>.</returns>
     [Pure]
     [return: NotNullIfNotNull(nameof(html))]
-    public static async ValueTask<string?> StripTags(this string? html)
+    public static async ValueTask<string?> StripTagsFromHtml(this string? html)
     {
         if (html.IsNullOrWhiteSpace())
             return html;
@@ -99,7 +99,7 @@ public static class HtmlStringExtension
     /// <returns>The minified HTML string, or <c>null</c> if <paramref name="html"/> is <c>null</c>.</returns>
     [Pure]
     [return: NotNullIfNotNull(nameof(html))]
-    public static async ValueTask<string?> Minify(this string? html)
+    public static async ValueTask<string?> MinifyHtml(this string? html)
     {
         if (html.IsNullOrWhiteSpace())
             return html;
@@ -120,7 +120,7 @@ public static class HtmlStringExtension
     /// <param name="tagName">The tag name to search for (e.g., "img", "script").</param>
     /// <returns><c>true</c> if an element with the given tag name exists; otherwise, <c>false</c>.</returns>
     [Pure]
-    public static async ValueTask<bool> HasElement(this string? html, string tagName)
+    public static async ValueTask<bool> HasHtmlElement(this string? html, string tagName)
     {
         if (html.IsNullOrWhiteSpace())
             return false;
