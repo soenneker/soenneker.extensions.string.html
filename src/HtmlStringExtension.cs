@@ -1,13 +1,14 @@
-using System;
-using System.Diagnostics.CodeAnalysis;
-using System.Diagnostics.Contracts;
-using System.IO;
-using System.Threading.Tasks;
 using AngleSharp;
 using AngleSharp.Html;
 using AngleSharp.Html.Dom;
 using AngleSharp.Html.Parser;
-using Soenneker.Extensions.Task;
+using System;
+using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.Contracts;
+using System.IO;
+using System.Runtime.CompilerServices;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Soenneker.Extensions.String.Html;
 
@@ -16,17 +17,20 @@ namespace Soenneker.Extensions.String.Html;
 /// </summary>
 public static class HtmlStringExtension
 {
-    private static readonly Lazy<ReverseMarkdown.Converter> _converter = new(() => new ReverseMarkdown.Converter(), true);
+    // Parsing HTML strings does not require a loader; keep the config lean.
+    private static readonly Lazy<IBrowsingContext> _context = new(() => BrowsingContext.New(Configuration.Default), isThreadSafe: true);
 
-    private static readonly Lazy<IBrowsingContext> _lazyContext = new(() => BrowsingContext.New(Configuration.Default.WithDefaultLoader()), true);
+    private static readonly Lazy<PrettyMarkupFormatter> _prettyFormatter = new(() => new PrettyMarkupFormatter(), isThreadSafe: true);
 
-    private static readonly Lazy<PrettyMarkupFormatter> _lazyFormatter = new(() => new PrettyMarkupFormatter(), true);
+    // AngleSharp's HtmlParser and ReverseMarkdown.Converter are safer treated as not thread-safe.
+    // ThreadLocal avoids locks and avoids cross-thread shared mutable state.
+    private static readonly ThreadLocal<IHtmlParser> _parser = new(() => new HtmlParser(new HtmlParserOptions(), _context.Value), trackAllValues: false);
 
-    /// <summary>
-    /// Converts an HTML string to a Markdown string.
-    /// </summary>
-    /// <param name="html">The HTML string to convert.</param>
-    /// <returns>The Markdown representation of the HTML string. If the input is null or whitespace, the original input is returned.</returns>
+    private static readonly ThreadLocal<ReverseMarkdown.Converter> _mdConverter = new(() => new ReverseMarkdown.Converter(), trackAllValues: false);
+
+    private static IHtmlParser Parser => _parser.Value!;
+    private static ReverseMarkdown.Converter MarkdownConverter => _mdConverter.Value!;
+
     [Pure]
     [return: NotNullIfNotNull(nameof(html))]
     public static string? ToMarkdownFromHtml(this string? html)
@@ -34,101 +38,130 @@ public static class HtmlStringExtension
         if (html.IsNullOrWhiteSpace())
             return html;
 
-        return _converter.Value.Convert(html);
-    }
-
-    /// <summary>
-    /// Formats the specified HTML string with indentation and consistent structure using a pretty markup formatter.
-    /// </summary>
-    /// <param name="html">The HTML string to format. If <c>null</c> or whitespace, the original value is returned.</param>
-    /// <returns>
-    /// A <see cref="string"/> containing the formatted HTML, or <c>null</c> if <paramref name="html"/> is <c>null</c>.
-    /// </returns>
-    [Pure]
-    public static async ValueTask<string?> FormatAsHtml(this string? html)
-    {
-        if (html.IsNullOrWhiteSpace())
+        // Optional fast-fail: if it doesn't even resemble HTML, skip conversion.
+        // (Remove this if you want markdown conversion for non-HTML input too.)
+        if (!LooksLikeHtml(html))
             return html;
 
-        IBrowsingContext context = _lazyContext.Value;
-        var parser = context.GetService<IHtmlParser>();
-        IHtmlDocument document = await parser.ParseDocumentAsync(html).NoSync();
-
-        await using var sw = new StringWriter();
-        document.ToHtml(sw, _lazyFormatter.Value);
-        return sw.ToString();
+        return MarkdownConverter.Convert(html);
     }
 
-    /// <summary>
-    /// Strips all HTML tags and returns only the inner text.
-    /// </summary>
-    /// <param name="html">The HTML string to strip.</param>
-    /// <returns>The plain text content, or <c>null</c> if <paramref name="html"/> is <c>null</c>.</returns>
+    [Pure]
+    public static ValueTask<string?> FormatAsHtml(this string? html)
+    {
+        if (html.IsNullOrWhiteSpace())
+            return new ValueTask<string?>(html);
+
+        if (!LooksLikeHtml(html))
+            return new ValueTask<string?>(html);
+
+        IHtmlDocument document = Parser.ParseDocument(html);
+
+        using var sw = new StringWriter();
+        document.ToHtml(sw, _prettyFormatter.Value);
+        return new ValueTask<string?>(sw.ToString());
+    }
+
     [Pure]
     [return: NotNullIfNotNull(nameof(html))]
-    public static async ValueTask<string?> StripTagsFromHtml(this string? html)
+    public static ValueTask<string?> StripTagsFromHtml(this string? html)
     {
         if (html.IsNullOrWhiteSpace())
-            return html;
+            return new ValueTask<string?>(html);
 
-        IBrowsingContext context = _lazyContext.Value;
-        var parser = context.GetService<IHtmlParser>();
-        IHtmlDocument document = await parser.ParseDocumentAsync(html).NoSync();
+        if (!LooksLikeHtml(html))
+            return new ValueTask<string?>(html.Trim());
 
-        return document.Body?.TextContent?.Trim();
+        IHtmlDocument document = Parser.ParseDocument(html);
+
+        // Avoid null-prop chains allocations; Trim() creates a new string only if needed.
+        string? text = document.Body?.TextContent;
+        if (text is null)
+            return new ValueTask<string?>((string?)null);
+
+        return new ValueTask<string?>(text.Trim());
     }
 
-    /// <summary>
-    /// Determines whether the string contains HTML tags.
-    /// </summary>
-    /// <param name="html">The string to check.</param>
-    /// <returns><c>true</c> if the string contains HTML; otherwise, <c>false</c>.</returns>
     [Pure]
     public static bool ContainsHtml(this string? html)
     {
         if (html.IsNullOrEmpty())
             return false;
 
-        return html.Contains('<') && html.Contains('>') && html.IndexOf("</", StringComparison.Ordinal) >= 0;
+        return LooksLikeHtml(html);
     }
 
-    /// <summary>
-    /// Minifies the HTML by removing unnecessary whitespace and newlines.
-    /// </summary>
-    /// <param name="html">The HTML string to minify.</param>
-    /// <returns>The minified HTML string, or <c>null</c> if <paramref name="html"/> is <c>null</c>.</returns>
     [Pure]
     [return: NotNullIfNotNull(nameof(html))]
-    public static async ValueTask<string?> MinifyHtml(this string? html)
+    public static ValueTask<string?> MinifyHtml(this string? html)
     {
         if (html.IsNullOrWhiteSpace())
-            return html;
+            return new ValueTask<string?>(html);
 
-        IBrowsingContext context = _lazyContext.Value;
-        var parser = context.GetService<IHtmlParser>();
-        IHtmlDocument document = await parser.ParseDocumentAsync(html).NoSync();
+        if (!LooksLikeHtml(html))
+            return new ValueTask<string?>(html);
 
-        await using var sw = new StringWriter();
-        document.ToHtml(sw, HtmlMarkupFormatter.Instance); // Compact formatter
-        return sw.ToString();
+        IHtmlDocument document = Parser.ParseDocument(html);
+
+        using var sw = new StringWriter();
+        document.ToHtml(sw, HtmlMarkupFormatter.Instance); // compact formatter
+        return new ValueTask<string?>(sw.ToString());
     }
 
-    /// <summary>
-    /// Checks whether the HTML contains an element with the given tag name.
-    /// </summary>
-    /// <param name="html">The HTML string.</param>
-    /// <param name="tagName">The tag name to search for (e.g., "img", "script").</param>
-    /// <returns><c>true</c> if an element with the given tag name exists; otherwise, <c>false</c>.</returns>
     [Pure]
-    public static async ValueTask<bool> HasHtmlElement(this string? html, string tagName)
+    public static ValueTask<bool> HasHtmlElement(this string? html, string tagName)
     {
-        if (html.IsNullOrWhiteSpace())
+        if (html.IsNullOrWhiteSpace() || tagName.IsNullOrWhiteSpace())
+            return new ValueTask<bool>(false);
+
+        // Cheap pre-check to avoid parsing most of the time.
+        // Handles "<tag", "<tag>", "<tag ", "<tag\n", etc.
+        if (!ContainsOpenTag(html, tagName))
+            return new ValueTask<bool>(false);
+
+        IHtmlDocument document = Parser.ParseDocument(html);
+        return new ValueTask<bool>(document.QuerySelector(tagName) is not null);
+    }
+
+    [Pure, MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool LooksLikeHtml(string s)
+    {
+        // Fast-ish heuristic: <...> and a closing tag marker.
+        // Keep it cheap and non-allocating.
+        int lt = s.IndexOf('<');
+        if (lt < 0)
             return false;
 
-        IBrowsingContext context = _lazyContext.Value;
-        var parser = context.GetService<IHtmlParser>();
-        IHtmlDocument document = await parser.ParseDocumentAsync(html).NoSync();
+        int gt = s.IndexOf('>', lt + 1);
+        if (gt < 0)
+            return false;
 
-        return document.QuerySelector(tagName) != null;
+        return s.IndexOf("</", lt + 1, StringComparison.Ordinal) >= 0;
+    }
+
+    [Pure, MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool ContainsOpenTag(string html, string tagName)
+    {
+        // Case-insensitive search for "<tag"
+        // (AngleSharp itself is HTML5/case-insensitive for tag names; this matches that intent.)
+        ReadOnlySpan<char> h = html.AsSpan();
+        ReadOnlySpan<char> t = tagName.AsSpan();
+
+        // Build pattern "<" + tagName without allocating.
+        for (int i = 0; i < h.Length; i++)
+        {
+            if (h[i] != '<')
+                continue;
+
+            int start = i + 1;
+            if (start + t.Length > h.Length)
+                return false;
+
+            if (h.Slice(start, t.Length)
+                 .Equals(t, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
     }
 }
