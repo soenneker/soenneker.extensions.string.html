@@ -43,7 +43,7 @@
     <ItemGroup>
       <PackageReference Include="AngleSharp" Version="1.4.0" />
       <PackageReference Include="ReverseMarkdown" Version="4.7.1" />
-      <PackageReference Include="Soenneker.Extensions.String" Version="4.0.591" />
+      <PackageReference Include="Soenneker.Extensions.String" Version="4.0.592" />
       <PackageReference Include="Soenneker.Extensions.Task" Version="4.0.111" />
     </ItemGroup>
 </Project>
