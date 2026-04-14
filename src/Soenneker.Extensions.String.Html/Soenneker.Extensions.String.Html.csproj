@@ -49,6 +49,6 @@
         <PackageReference Include="AngleSharp" Version="1.4.0" />
         <PackageReference Include="ReverseMarkdown" Version="5.3.0" />
         <PackageReference Include="Soenneker.Extensions.Spans.ReadOnly.Chars.Html" Version="4.0.37" />
-        <PackageReference Include="Soenneker.Extensions.String" Version="4.0.665" />
+        <PackageReference Include="Soenneker.Extensions.String" Version="4.0.666" />
     </ItemGroup>
 </Project>
