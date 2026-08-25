@@ -209,7 +209,7 @@ public static class HtmlStringExtension
             if (child is not IElement element)
                 continue;
 
-            string tagName = element.TagName.ToLowerInvariant();
+            string tagName = element.LocalName;
 
             switch (tagName)
             {
@@ -299,7 +299,15 @@ public static class HtmlStringExtension
                 continue;
 
             sb.Append(' ', listDepth * 2);
-            sb.Append(ordered ? $"{index}. " : "- ");
+            if (ordered)
+            {
+                sb.Append(index);
+                sb.Append(". ");
+            }
+            else
+            {
+                sb.Append("- ");
+            }
             AppendMarkdown(item, ref sb, listDepth + 1);
             TrimTrailingWhitespace(ref sb);
             sb.AppendLine();
@@ -329,26 +337,33 @@ public static class HtmlStringExtension
     private static void AppendBlockQuote(IElement element, ref PooledStringBuilder sb, int listDepth)
     {
         var inner = new PooledStringBuilder();
-        string innerText;
 
         try
         {
             AppendMarkdown(element, ref inner, listDepth);
-            innerText = inner.ToStringAndDispose().Trim();
+            ReadOnlySpan<char> innerText = inner.AsSpan().Trim();
+
+            EnsureBlankLine(ref sb);
+
+            while (true)
+            {
+                int newline = innerText.IndexOf('\n');
+                ReadOnlySpan<char> line = newline < 0 ? innerText : innerText[..newline];
+                line = line.TrimEnd('\r');
+
+                sb.Append("> ");
+                sb.Append(line);
+                sb.AppendLine();
+
+                if (newline < 0)
+                    break;
+
+                innerText = innerText[(newline + 1)..];
+            }
         }
-        catch
+        finally
         {
             inner.Dispose();
-            throw;
-        }
-
-        EnsureBlankLine(ref sb);
-
-        string[] lines = innerText.Split('\n');
-        foreach (string line in lines)
-        {
-            sb.Append("> ");
-            sb.AppendLine(line.TrimEnd('\r'));
         }
 
         EnsureBlankLine(ref sb);
@@ -376,23 +391,53 @@ public static class HtmlStringExtension
         if (text.IsNullOrWhiteSpace())
             return;
 
+        ReadOnlySpan<char> textSpan = text.AsSpan();
+        var first = 0;
+        while (first < textSpan.Length && char.IsWhiteSpace(textSpan[first]))
+            first++;
+
         ReadOnlySpan<char> current = sb.AsSpan();
         bool needsSpace = current.Length > 0 && !char.IsWhiteSpace(current[^1]) &&
                           !IsMarkdownOpeningPunctuation(current[^1]);
-        string collapsed = string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
-        if (needsSpace && !IsMarkdownClosingPunctuation(collapsed[0]))
+        if (needsSpace && !IsMarkdownClosingPunctuation(textSpan[first]))
             sb.Append(' ');
 
-        sb.Append(collapsed);
+        var position = first;
+        var wroteToken = false;
+
+        while (position < textSpan.Length)
+        {
+            while (position < textSpan.Length && char.IsWhiteSpace(textSpan[position]))
+                position++;
+
+            if (position >= textSpan.Length)
+                break;
+
+            int tokenStart = position;
+            while (position < textSpan.Length && !char.IsWhiteSpace(textSpan[position]))
+                position++;
+
+            if (wroteToken)
+                sb.Append(' ');
+
+            sb.Append(textSpan[tokenStart..position]);
+            wroteToken = true;
+        }
     }
 
     private static string NormalizeMarkdown(ref PooledStringBuilder sb)
     {
-        TrimTrailingWhitespace(ref sb);
+        ReadOnlySpan<char> current = sb.AsSpan();
+        var trailing = 0;
 
-        string result = sb.ToStringAndDispose();
-        return result.Trim();
+        for (int i = current.Length - 1; i >= 0 && char.IsWhiteSpace(current[i]); i--)
+            trailing++;
+
+        if (trailing > 0)
+            sb.Shrink(trailing);
+
+        return sb.ToStringAndDispose();
     }
 
     private static void EnsureBlankLine(ref PooledStringBuilder sb)
