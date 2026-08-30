@@ -193,7 +193,14 @@ public static class HtmlStringExtension
 
         HtmlParser parser = await GetParser(cancellationToken).NoSync();
         IHtmlDocument document = await parser.ParseDocumentAsync(html, cancellationToken).NoSync();
-        return document.QuerySelector(tagName) is not null;
+
+        foreach (IElement element in document.All)
+        {
+            if (element.LocalName.Equals(tagName, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
     }
 
     private static void AppendMarkdown(INode node, ref PooledStringBuilder sb, int listDepth)

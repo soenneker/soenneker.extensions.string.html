@@ -4,7 +4,7 @@
 [![](https://img.shields.io/github/actions/workflow/status/soenneker/soenneker.extensions.string.html/codeql.yml?label=CodeQL&style=for-the-badge)](https://github.com/soenneker/soenneker.extensions.string.html/actions/workflows/codeql.yml)
 
 # ![](https://user-images.githubusercontent.com/4441470/224455560-91ed3ee7-f510-4041-a8d2-3fc093025112.png) Soenneker.Extensions.String.Html
-A collection of helpful html string extension methods.
+Parse HTML strings to format or minify markup, extract text, convert common elements to Markdown, and find elements.
 
 ## Installation
 
@@ -12,20 +12,44 @@ A collection of helpful html string extension methods.
 dotnet add package Soenneker.Extensions.String.Html
 ```
 
-## Quick start
+## Convert HTML to Markdown
 
 ```csharp
 using Soenneker.Extensions.String.Html;
 
-// Given an existing string? named html:
-var result = html.ToMarkdownFromHtml();
+string html = "<h2>Status</h2><p>Build <strong>passed</strong>.</p>";
+string? markdown = await html.ToMarkdownFromHtml();
 ```
 
-## Common operations
+The converter handles paragraphs, headings, emphasis, links, ordered and unordered lists, block quotes, inline code, preformatted blocks, and line breaks. Other elements contribute their child content. Whitespace is normalized, so this is intended for readable Markdown rather than lossless round-tripping.
 
-- `ToMarkdownFromHtml()` - Converts an HTML-formatted string to its Markdown representation. Returns a string containing the Markdown representation of the input HTML. Returns null if the input is null. If the input string does not resemble HTML, the method returns the input unchanged.
-- `FormatAsHtml()` - Formats the specified string as HTML if it appears to be valid HTML content. Returns the formatted HTML string, or null if the input was null or whitespace. If the input string does not resemble HTML, it is returned unchanged.
-- `StripTagsFromHtml()` - Removes all HTML tags from the specified string and returns the plain text content. If the input string does not appear to contain HTML, the method trims and returns the input as is.
-- `ContainsHtml()` - Determines whether the specified string contains HTML content.
-- `MinifyHtml()` - Minifies the specified HTML string by removing unnecessary whitespace and formatting, producing a more compact representation. Returns a minified version of the input HTML string, or the original value if the input is null, whitespace, or does not resemble HTML.
-- `HasHtmlElement()` - Determines whether the specified HTML string contains an element with the given tag name.
+Link destinations are copied as written. The method is not an HTML sanitizer or a Markdown-security boundary; sanitize untrusted markup and validate links before rendering the result as active content.
+
+## Format or minify markup
+
+```csharp
+string? formatted = await html.FormatAsHtml();
+string? compact = await html.MinifyHtml();
+```
+
+Both methods parse with AngleSharp and serialize the resulting document. Parsing can repair malformed markup and can add document structure such as `html`, `head`, and `body`; the output is not guaranteed to preserve the input byte-for-byte. Formatting changes layout, while minification uses AngleSharp's compact formatter.
+
+Null and whitespace inputs are returned unchanged. Text that does not pass the package's lightweight HTML sniff is also returned unchanged.
+
+## Extract text
+
+```csharp
+string? text = await "<p>Hello <b>world</b></p>".StripTagsFromHtml();
+// "Hello world"
+```
+
+`StripTagsFromHtml()` returns the parsed body element's trimmed `TextContent`. This removes markup but is not sanitization, and text inside elements such as `script` or `style` may still be present. For non-HTML input it returns `Trim()` of the original text.
+
+## Detect content and elements
+
+```csharp
+bool containsMarkup = html.ContainsHtml();
+bool hasHeading = await html.HasHtmlElement("h2");
+```
+
+`ContainsHtml()` is a syntax sniff, not validation. `HasHtmlElement()` first performs an allocation-free opening-tag check, then parses the document and compares actual element names case-insensitively. It returns `false` for null/whitespace HTML or tag names.
