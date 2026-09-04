@@ -11,6 +11,7 @@ using System.Diagnostics.Contracts;
 using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using AngleSharpContextType = Soenneker.AngleSharp.Parser.Enums.AngleSharpContextType;
@@ -93,7 +94,7 @@ public static class HtmlStringExtension
 
         HtmlParser parser = await GetParser(cancellationToken).NoSync();
         IHtmlDocument document = await parser.ParseDocumentAsync(html, cancellationToken).NoSync();
-        await using var sw = new StringWriter(CultureInfo.InvariantCulture);
+        using var sw = new StringWriter(new StringBuilder(html.Length), CultureInfo.InvariantCulture);
         document.ToHtml(sw, _prettyFormatter);
         return sw.ToString();
     }
@@ -166,7 +167,7 @@ public static class HtmlStringExtension
 
         HtmlParser parser = await GetParser(cancellationToken).NoSync();
         IHtmlDocument document = await parser.ParseDocumentAsync(html, cancellationToken).NoSync();
-        await using var sw = new StringWriter(CultureInfo.InvariantCulture);
+        using var sw = new StringWriter(new StringBuilder(html.Length), CultureInfo.InvariantCulture);
         document.ToHtml(sw, HtmlMarkupFormatter.Instance); // compact formatter
         return sw.ToString();
     }
